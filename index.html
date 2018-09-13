@@ -1,0 +1,181 @@
+
+<html>
+  <head>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <!-- Load TensorFlow.js -->
+   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"> </script>
+   <!--Load Train and Test-->
+   <script type="text/javascript" src="test_data.json"></script>
+   <script type="text/javascript" src="train_data.json"></script>
+   <script type="text/javascript" src="metrics.js"></script>
+    <script>
+
+    //Max values for accelerometer and gyroscope
+    const max_acc_x = 56.83834858
+    const max_acc_y = 76.63854536
+    const max_acc_z = 36.08495968
+    const max_rot_x = 1324.011735
+    const max_rot_y = 1477.359645
+    const max_rot_z = 1265.003162
+
+    //Min values for accelerometer and gyroscope
+    const min_acc_x = -75.73712844
+    const min_acc_y = -22.05718134
+    const min_acc_z = -58.6339999
+    const min_rot_x = -943.5789406
+    const min_rot_y = -1500.218266
+    const min_rot_z = -1146.076673
+
+    //Global vars
+    const model = tf.sequential();
+    var prediction;
+
+    window.onload = async function prepareData(){
+
+      //TENNIS data
+      var pingPongData = traindata
+      var pingPongDataTest = testdataSmall
+
+      //PREPARE DATA
+  		var trainingData = tf.tensor(pingPongData.map(item =>
+  		      averageFilter(convertRange(item.x, min_acc_x , max_acc_x)).concat(
+            averageFilter(convertRange(item.y, min_acc_y , max_acc_y)),
+            averageFilter(convertRange(item.z, min_acc_z , max_acc_z)),
+            averageFilter(convertRange(item.rxn, min_rot_x, max_rot_x)),
+            averageFilter(convertRange(item.ryn, min_rot_y, max_rot_y)),
+            averageFilter(convertRange(item.rzn, min_rot_z, max_rot_z)))
+          ));
+
+  		const testData = tf.tensor(pingPongDataTest.map(item =>
+
+        averageFilter(convertRange(item.x, min_acc_x , max_acc_x)).concat(
+        averageFilter(convertRange(item.y, min_acc_y , max_acc_y)),
+        averageFilter(convertRange(item.z, min_acc_z , max_acc_z)),
+        averageFilter(convertRange(item.rxn, min_rot_x, max_rot_x)),
+        averageFilter(convertRange(item.ryn, min_rot_y, max_rot_y)),
+        averageFilter(convertRange(item.rzn, min_rot_z, max_rot_z)))
+      ));
+
+      const outputData = tf.tensor(traindata.map(item => [
+        item.stroke === "Forehand Push" ? 1 : 0,
+        item.stroke === "Forehand Drive" ? 1 : 0,
+        item.stroke === "Forehand Topspin" ? 1 : 0,
+        item.stroke === "Backhand Push" ? 1 : 0,
+        item.stroke === "Backhand Drive" ? 1 : 0,
+        item.stroke === "Backhand Topspin" ? 1 : 0,
+      ]))
+
+      console.log("trainingData " + trainingData)
+      console.log("outputData " + outputData)
+      console.log("testData " + testData)
+
+      //ADD LAYERS
+      model.add(tf.layers.dense({
+        inputShape: [216],
+        activation: "tanh",
+        units: 216,
+      }))
+      model.add(tf.layers.dense({
+        activation: "tanh",
+        units: 36,
+      }))
+      model.add(tf.layers.dense({
+        activation:"softmax",
+        units:6
+      }))
+
+      //Compile the NN
+      model.compile({
+          optimizer: tf.train.adam(.06),
+          loss: 'categoricalCrossentropy',
+      })
+
+      const history = await model.fit(trainingData, outputData,
+        {
+          epochs: 400
+        }
+      )
+
+      predict(testData)
+
+      const loss = history.history.loss;
+      const accuracy = history.history.acc;
+
+      generateMetrics(pingPongDataTest)
+
+  }
+
+
+  /***************************
+  predict(testData)
+  input:  test data in form of a tensor
+  output: -
+  Uses the test data as input for prediciting a class in the neural network
+  **************************/
+  function predict(testData){
+
+        //Predict
+        prediction = model.predict(testData)
+        console.log("prediction " + prediction)
+    }
+
+    /***************************
+    averageFilter(arr)
+    input:  array to be averaged
+    output: an array with averaged values (with window of 5)
+    takes an element of an array and averages its value in a window of 5
+    **************************/
+    function averageFilter(arr){
+
+        var arrFiltered = arr.slice();
+        for(var i=2; i< arr.length-2; i++){
+            var sum = parseFloat(arr[i-2]) + parseFloat(arr[i-1]) + parseFloat(arr[i]) + parseFloat(arr[i+1]) + parseFloat(arr[i+2])
+            arrFiltered[i] = parseFloat(sum / 5.0);
+        }
+
+        return arrFiltered;
+    }
+
+    /***************************
+    convertRange(arr, minValue, maxValue)
+    input:  array to be normalized,
+            minValue seen in the calling axis,
+            maxValue seen in the calling axis
+    output: an array normalized in the range of -1 to 1
+    **************************/
+    function convertRange(arr, minValue, maxValue){
+
+        range_low_limit = -1
+        range_top_limit = 1
+
+        var normalizedArr =[];
+
+        for(var i=0; i<arr.length; i++){
+            if(arr[i] > maxValue)
+                arr[i] = maxValue
+            else if(arr[i] < minValue)
+                arr[i] = minValue
+            normalizedArr[i] = ( arr[i] - minValue ) * ( range_top_limit - range_low_limit ) / ( maxValue - minValue ) + range_low_limit ;
+        }
+
+        return normalizedArr;
+
+    }
+
+
+    </script>
+  </head>
+
+
+  <body>
+    <br>
+    <div id ="confusionMatrix">Predicting test data...</div>
+    <div id ="recall"></div>
+    <div id ="precision"></div>
+    <div id ="f1Score"></div>
+    <div id ="accuracy"></div>
+    <div id ="loss"></div>
+
+  </body>
+
+</html>
