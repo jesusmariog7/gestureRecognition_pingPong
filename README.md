@@ -1,5 +1,5 @@
 # gestureRecognition_pingPong
-Neural Network in Tensorflow.js for ping pong gesture recognition
+Simple Neural Network in Tensorflow.js for ping pong gesture recognition
 
 It uses one input layer, one hidden layer and one output layer to recognize the following classes:
 
